@@ -1,6 +1,6 @@
 # mnb/mnb-phpexcel-xls
 
-Optional legacy XLS reader adapter for MNB PHPExcel.
+Legacy XLS reader and writer support for MNB PHPExcel, backed by PhpSpreadsheet.
 
 This package is generated from the MNB PHPExcel monorepo. Do not copy source files between modules manually.
 
