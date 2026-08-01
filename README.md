@@ -3,7 +3,11 @@
 A fully independent, pure-PHP BIFF8 reader and writer for legacy Excel 97–2003 `.xls` files.
 
 This package **does not require, suggest, wrap, or call PhpSpreadsheet**. Both the OLE Compound File container and the BIFF8 workbook stream are processed natively.
+## MNB PHPExcel Assistant
 
+Generate MNB PHPExcel code using our dedicated ChatGPT assistant:
+
+[Open MNB PHPExcel AI Assistant](https://chatgpt.com/g/g-6a6e31d80350819194b68853d41c1561-mnb-phpexcel-assistant)
 ## Install
 
 ```bash
