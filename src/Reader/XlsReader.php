@@ -11,11 +11,17 @@ use Mnb\PHPExcel\Support\ErrorCode;
 use Mnb\PHPExcel\Support\MnbExcelException;
 
 /** Fully independent native BIFF8/XLS reader. */
-final class XlsReader implements XlsReaderInterface
+final class XlsReader implements XlsReaderInterface, MetadataReaderInterface
 {
     public function format(): string
     {
         return 'xls';
+    }
+
+    /** @param array<string,mixed> $options @return array<string,mixed> */
+    public function metaInfo(string $path, array $options = []): array
+    {
+        return (new XlsMetadataReader())->metaInfo($path, $options);
     }
 
     /** @return list<list<mixed>> */

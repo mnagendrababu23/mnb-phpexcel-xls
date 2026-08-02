@@ -65,6 +65,12 @@ final class WorkbookWriter
         $stream .= BiffRecordWriter::record(RecordType::CODEPAGE, pack('v', 1200));
         $stream .= BiffRecordWriter::record(RecordType::WINDOW1, hex2bin('000000000040002038000000000001005802'));
         $stream .= BiffRecordWriter::record(RecordType::DATEMODE, pack('v', (int) (($workbook->metadata['date1904'] ?? false) === true)));
+        $stream .= BiffRecordWriter::record(RecordType::CALCMODE, pack('v', 1));
+        $stream .= BiffRecordWriter::record(RecordType::CALCCOUNT, pack('v', 100));
+        $stream .= BiffRecordWriter::record(RecordType::REFMODE, pack('v', 1));
+        $stream .= BiffRecordWriter::record(RecordType::ITERATION, pack('v', 0));
+        $stream .= BiffRecordWriter::record(RecordType::DELTA, pack('e', 0.001));
+        $stream .= BiffRecordWriter::record(RecordType::SAVERECALC, pack('v', 1));
         $stream .= BiffRecordWriter::record(RecordType::FONT, $this->fontRecord('Arial', 10));
         $stream .= BiffRecordWriter::record(RecordType::XF, $this->xfRecord(0));
         $stream .= BiffRecordWriter::record(RecordType::XF, $this->xfRecord(14));

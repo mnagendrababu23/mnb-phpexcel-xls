@@ -3,11 +3,7 @@
 A fully independent, pure-PHP BIFF8 reader and writer for legacy Excel 97–2003 `.xls` files.
 
 This package **does not require, suggest, wrap, or call PhpSpreadsheet**. Both the OLE Compound File container and the BIFF8 workbook stream are processed natively.
-## MNB PHPExcel Assistant
 
-Generate MNB PHPExcel code using our dedicated ChatGPT assistant:
-
-[Open MNB PHPExcel AI Assistant](https://chatgpt.com/g/g-6a6e31d80350819194b68853d41c1561-mnb-phpexcel-assistant)
 ## Install
 
 ```bash
@@ -205,3 +201,70 @@ php -d assert.exception=1 tests/run-native-smoke.php
 The fixture suite includes a LibreOffice-generated BIFF8 file, native write/read round-trips, formulas, dates, and SST continuation coverage.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/SUPPORTED-RECORDS.md](docs/SUPPORTED-RECORDS.md), and [docs/ROADMAP.md](docs/ROADMAP.md) for internals, the exact record matrix, and next compatibility milestones.
+
+## Unified metadata
+
+```php
+$report = Xls::metaInfo('report.xls', [
+    'profile' => 'full',
+    'max_items' => 1000,
+]);
+
+$report = Xls::read('report.xls')->metaInfo([
+    'profile' => 'forensic',
+    'include_hash' => true,
+]);
+```
+
+The native collector reads OLE SummaryInformation, DocumentSummaryInformation, custom properties, workbook/sheet state, calculation settings, protection indicators, macros, named objects, links, hidden content, comments, embedded streams, print records, validations, pivots, and forensic stream hashes. Complex BIFF objects that are counted but not fully decoded are explicitly marked `partial`.
+
+### Atomic metadata updates
+
+```php
+Xls::updateMetaInfo('source.xls', 'updated.xls', [
+    'document' => [
+        'title' => 'Annual Report',
+        'creator' => 'MNB',
+        'category' => 'Finance',
+    ],
+    'revision' => [
+        'last_saved_by' => 'Release Bot',
+        'revision_number' => '7',
+        'total_editing_time_seconds' => 3600,
+    ],
+    'application' => [
+        'application_name' => 'MNB PHPExcel',
+        'application_version' => '2.0',
+        'manager' => 'Finance Manager',
+        'company' => 'MNB',
+    ],
+    'custom_properties' => [
+        'Project ID' => 'PRJ-1001',
+        'Approved' => ['type' => 'boolean', 'value' => true],
+        'Budget' => ['type' => 'float', 'value' => 1250.50],
+        'Revision Date' => ['type' => 'datetime', 'value' => '2026-08-02T10:00:00Z'],
+    ],
+    'workbook' => [
+        'active_sheet' => 'Summary',
+        'sheet_visibility' => ['Raw Data' => 'hidden'],
+        'date1904' => false,
+    ],
+    'calculation' => [
+        'mode' => 'automatic',
+        'iterate' => false,
+        'iterate_count' => 100,
+        'iterate_delta' => 0.001,
+        'calc_on_save' => true,
+        'reference_mode' => 'a1',
+    ],
+]);
+```
+
+Updates are atomic, preserve unknown OLE streams and unmodified BIFF records, and support the same source and destination path. Password-encrypted BIFF workbooks are read safely as `password_required`, but native decryption/update is not implemented. Files containing digital-signature streams are rejected by default because metadata changes may invalidate the signature; proceeding requires the explicit `allow_invalidate_digital_signatures` option.
+
+```php
+Xls::removePersonalInfo('source.xls', 'clean.xls', [
+    'remove_custom_properties' => true,
+    'remove_descriptive_properties' => false,
+]);
+```
