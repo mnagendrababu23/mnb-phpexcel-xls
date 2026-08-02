@@ -26,55 +26,13 @@ final class CompoundFileWriter
 
     public static function build(string $streamName, string $streamData): string
     {
-        if ($streamName === '' || strlen(iconv('UTF-8', 'UTF-16LE', $streamName) ?: '') > 62) {
-            throw new \InvalidArgumentException('CFB stream name must fit in 31 UTF-16 code units.');
-        }
+        return self::buildStreams([$streamName => $streamData]);
+    }
 
-        // Keeping the workbook stream at or above the 4096-byte cutoff avoids a
-        // MiniFAT while remaining compliant with CFB allocation rules.
-        $streamLength = max(4096, strlen($streamData));
-        $streamData = str_pad($streamData, self::align($streamLength, self::SECTOR_SIZE), "\0");
-        $streamSectors = intdiv(strlen($streamData), self::SECTOR_SIZE);
-        $directorySectors = 1;
-
-        [$fatSectors, $difatSectors] = self::allocationSectorCounts($streamSectors + $directorySectors);
-
-        $directorySectorId = $streamSectors;
-        $firstFatSectorId = $directorySectorId + 1;
-        $firstDifatSectorId = $difatSectors > 0 ? $firstFatSectorId + $fatSectors : self::ENDOFCHAIN;
-        $totalSectors = $streamSectors + $directorySectors + $fatSectors + $difatSectors;
-
-        $fat = array_fill(0, $fatSectors * self::FAT_ENTRIES_PER_SECTOR, self::FREESECT);
-        for ($i = 0; $i < $streamSectors; $i++) {
-            $fat[$i] = $i === $streamSectors - 1 ? self::ENDOFCHAIN : $i + 1;
-        }
-        $fat[$directorySectorId] = self::ENDOFCHAIN;
-        for ($i = 0; $i < $fatSectors; $i++) {
-            $fat[$firstFatSectorId + $i] = self::FATSECT;
-        }
-        for ($i = 0; $i < $difatSectors; $i++) {
-            $fat[$firstDifatSectorId + $i] = self::DIFSECT;
-        }
-
-        $fatSectorIds = [];
-        for ($i = 0; $i < $fatSectors; $i++) {
-            $fatSectorIds[] = $firstFatSectorId + $i;
-        }
-
-        $header = self::header($fatSectorIds, $directorySectorId, $firstDifatSectorId, $difatSectors);
-        $directory = self::directory($streamName, 0, $streamLength);
-        $fatBytes = '';
-        foreach ($fat as $entry) {
-            $fatBytes .= pack('V', $entry);
-        }
-        $difatBytes = self::difatSectors($fatSectorIds, $firstDifatSectorId, $difatSectors);
-
-        $file = $header . $streamData . $directory . $fatBytes . $difatBytes;
-        $expected = 512 + ($totalSectors * self::SECTOR_SIZE);
-        if (strlen($file) !== $expected) {
-            throw new \RuntimeException('Internal CFB size calculation failed.');
-        }
-        return $file;
+    /** @param array<string,string> $streams */
+    public static function buildStreams(array $streams): string
+    {
+        return CompoundFileRewriter::buildRootStreams($streams);
     }
 
     /** @return array{0:int,1:int} */

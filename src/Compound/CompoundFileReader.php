@@ -39,6 +39,8 @@ final class CompoundFileReader
     private array $miniFat = [];
     /** @var list<DirectoryEntry> */
     private array $directoryEntries = [];
+    /** @var array<int,string> */
+    private array $directoryEntryBytes = [];
     private ?DirectoryEntry $rootEntry = null;
     private ?string $rootMiniStream = null;
 
@@ -82,6 +84,38 @@ final class CompoundFileReader
         }
     }
 
+    /** @return list<DirectoryEntry> */
+    public function directoryEntries(): array
+    {
+        return $this->directoryEntries;
+    }
+
+    public function readStreamById(int $entryId): string
+    {
+        foreach ($this->directoryEntries as $entry) {
+            if ($entry->id === $entryId && $entry->type === DirectoryEntry::TYPE_STREAM) {
+                return $this->readEntryStream($entry);
+            }
+        }
+        throw InvalidCompoundFileException::because('Compound stream entry was not found.', ['entry_id' => $entryId]);
+    }
+
+    /** @return list<array{name:string,size_bytes:int,type:int}> */
+    public function streamInfo(): array
+    {
+        $items = [];
+        foreach ($this->directoryEntries as $entry) {
+            if ($entry->type === DirectoryEntry::TYPE_STREAM) {
+                $items[] = [
+                    'name' => $entry->name,
+                    'size_bytes' => $entry->streamSize,
+                    'type' => $entry->type,
+                ];
+            }
+        }
+        return $items;
+    }
+
     /** @return list<string> */
     public function streamNames(): array
     {
@@ -105,23 +139,7 @@ final class CompoundFileReader
         if ($entry === null) {
             throw InvalidCompoundFileException::because('Compound stream was not found.', ['stream' => $name, 'available' => $this->streamNames()]);
         }
-        $maxStreamSize = (int) ($this->options['max_stream_size'] ?? 256 * 1024 * 1024);
-        if ($entry->streamSize > $maxStreamSize) {
-            throw InvalidCompoundFileException::because('Compound stream exceeds the configured size limit.', [
-                'stream' => $entry->name,
-                'size' => $entry->streamSize,
-                'limit' => $maxStreamSize,
-            ]);
-        }
-        if ($entry->streamSize === 0) {
-            return '';
-        }
-
-        if ($entry->streamSize < $this->miniStreamCutoff) {
-            return $this->readMiniStream($entry);
-        }
-
-        return substr($this->readSectorChain($entry->startSector, $this->fat, $this->sectorSize, 'stream:' . $entry->name), 0, $entry->streamSize);
+        return $this->readEntryStream($entry);
     }
 
     private function parseHeaderAndAllocationTables(): void
@@ -238,6 +256,7 @@ final class CompoundFileReader
 
         for ($id = 0; $id < $entryCount; $id++) {
             $entry = substr($directoryBytes, $id * 128, 128);
+            $this->directoryEntryBytes[$id] = $entry;
             $type = Binary::u8($entry, 66);
             if ($type === DirectoryEntry::TYPE_EMPTY) {
                 continue;
@@ -260,6 +279,8 @@ final class CompoundFileReader
                 Binary::u32($entry, 76),
                 Binary::u32($entry, 116),
                 Binary::u64($entry, 120),
+                $entry,
+                Binary::u8($entry, 67),
             );
             $this->directoryEntries[] = $directoryEntry;
             if ($type === DirectoryEntry::TYPE_ROOT) {
@@ -269,6 +290,23 @@ final class CompoundFileReader
         if ($this->rootEntry === null) {
             throw InvalidCompoundFileException::because('CFB root directory entry is missing.');
         }
+    }
+
+    private function readEntryStream(DirectoryEntry $entry): string
+    {
+        $maxStreamSize = (int) ($this->options['max_stream_size'] ?? 256 * 1024 * 1024);
+        if ($entry->streamSize > $maxStreamSize) {
+            throw InvalidCompoundFileException::because('Compound stream exceeds the configured size limit.', [
+                'stream' => $entry->name, 'size' => $entry->streamSize, 'limit' => $maxStreamSize,
+            ]);
+        }
+        if ($entry->streamSize === 0) {
+            return '';
+        }
+        if ($entry->streamSize < $this->miniStreamCutoff) {
+            return $this->readMiniStream($entry);
+        }
+        return substr($this->readSectorChain($entry->startSector, $this->fat, $this->sectorSize, 'stream:' . $entry->name), 0, $entry->streamSize);
     }
 
     private function readMiniStream(DirectoryEntry $entry): string

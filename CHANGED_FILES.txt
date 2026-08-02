@@ -1,0 +1,22 @@
+# Changed/new files for mnb-phpexcel-xls
+# Apply at the repository root, preserving paths.
+
+MODIFIED CHANGELOG.md
+MODIFIED README.md
+MODIFIED VERSION
+MODIFIED composer.json
+MODIFIED src/Compound/CompoundFileReader.php
+NEW      src/Compound/CompoundFileRewriter.php
+MODIFIED src/Compound/CompoundFileWriter.php
+MODIFIED src/Compound/DirectoryEntry.php
+MODIFIED src/Format/Xls.php
+NEW      src/Metadata/OlePropertySetReader.php
+NEW      src/Metadata/OlePropertySetWriter.php
+NEW      src/Metadata/XlsMetadataWriter.php
+NEW      src/Reader/XlsMetadataReader.php
+MODIFIED src/Reader/XlsReader.php
+MODIFIED src/Writer/WorkbookWriter.php
+MODIFIED src/Writer/XlsWriter.php
+NEW      tests/fixtures/rich-metadata.xls
+NEW      tests/metadata_smoke.php
+NEW      tests/metadata_write_smoke.php

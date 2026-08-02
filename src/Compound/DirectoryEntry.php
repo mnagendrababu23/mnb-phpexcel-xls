@@ -20,6 +20,8 @@ final class DirectoryEntry
         public readonly int $childId,
         public readonly int $startSector,
         public readonly int $streamSize,
+        public readonly string $rawBytes = '',
+        public readonly int $color = 1,
     ) {
     }
 }
