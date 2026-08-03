@@ -32,7 +32,9 @@ final class WorkbookWriter
         }
 
         $sharedStrings = new SharedStringWriter();
-        $worksheetWriter = new WorksheetWriter($sharedStrings, $options);
+        $styles = new XlsStyleRegistry();
+        $styles->registerWorkbook($workbook);
+        $worksheetWriter = new WorksheetWriter($sharedStrings, $styles, (bool) ($workbook->metadata['date1904'] ?? false), $options);
         foreach ($sheets as $sheet) {
             $worksheetWriter->registerStrings($sheet);
         }
@@ -43,14 +45,14 @@ final class WorkbookWriter
         }
 
         $placeholderOffsets = array_fill(0, count($sheets), 0);
-        $globals = $this->workbookGlobals($workbook, $sharedStrings, $placeholderOffsets);
+        $globals = $this->workbookGlobals($workbook, $sharedStrings, $styles, $placeholderOffsets);
         $offsets = [];
         $offset = strlen($globals);
         foreach ($worksheetStreams as $sheetStream) {
             $offsets[] = $offset;
             $offset += strlen($sheetStream);
         }
-        $globalsWithOffsets = $this->workbookGlobals($workbook, $sharedStrings, $offsets);
+        $globalsWithOffsets = $this->workbookGlobals($workbook, $sharedStrings, $styles, $offsets);
         if (strlen($globalsWithOffsets) !== strlen($globals)) {
             throw new \LogicException('BOUNDSHEET offset patching changed workbook global size.');
         }
@@ -59,11 +61,18 @@ final class WorkbookWriter
     }
 
     /** @param list<int> $sheetOffsets */
-    private function workbookGlobals(WorkbookData $workbook, SharedStringWriter $sharedStrings, array $sheetOffsets): string
+    private function workbookGlobals(WorkbookData $workbook, SharedStringWriter $sharedStrings, XlsStyleRegistry $styles, array $sheetOffsets): string
     {
         $stream = BiffRecordWriter::bof(0x0005);
         $stream .= BiffRecordWriter::record(RecordType::CODEPAGE, pack('v', 1200));
-        $stream .= BiffRecordWriter::record(RecordType::WINDOW1, hex2bin('000000000040002038000000000001005802'));
+        $activeSheet = $workbook->metadata['_mnb_active_sheet'] ?? 1;
+        if (is_string($activeSheet) && !ctype_digit($activeSheet)) {
+            foreach ($workbook->sheets as $index => $candidate) {
+                if ($candidate->name === $activeSheet) { $activeSheet = $index + 1; break; }
+            }
+        }
+        $activeTab = max(0, min(count($workbook->sheets) - 1, ((int) $activeSheet) - 1));
+        $stream .= BiffRecordWriter::record(RecordType::WINDOW1, pack('vvvvvvvvv', 0, 0, 0x4000, 0x2000, 0x0038, $activeTab, 0, 1, 600));
         $stream .= BiffRecordWriter::record(RecordType::DATEMODE, pack('v', (int) (($workbook->metadata['date1904'] ?? false) === true)));
         $stream .= BiffRecordWriter::record(RecordType::CALCMODE, pack('v', 1));
         $stream .= BiffRecordWriter::record(RecordType::CALCCOUNT, pack('v', 100));
@@ -71,31 +80,20 @@ final class WorkbookWriter
         $stream .= BiffRecordWriter::record(RecordType::ITERATION, pack('v', 0));
         $stream .= BiffRecordWriter::record(RecordType::DELTA, pack('e', 0.001));
         $stream .= BiffRecordWriter::record(RecordType::SAVERECALC, pack('v', 1));
-        $stream .= BiffRecordWriter::record(RecordType::FONT, $this->fontRecord('Arial', 10));
-        $stream .= BiffRecordWriter::record(RecordType::XF, $this->xfRecord(0));
-        $stream .= BiffRecordWriter::record(RecordType::XF, $this->xfRecord(14));
-        $stream .= BiffRecordWriter::record(RecordType::XF, $this->xfRecord(22));
+        $stream .= $styles->globalsRecords();
         $stream .= BiffRecordWriter::record(RecordType::STYLE, pack('vCC', 0x8000, 0, 0xFF));
 
+        $states = is_array($workbook->metadata['_mnb_sheet_states'] ?? null) ? $workbook->metadata['_mnb_sheet_states'] : [];
         foreach ($workbook->sheets as $index => $sheet) {
+            $stateName = (string) ($states[$sheet->name] ?? $states[$index + 1] ?? 'visible');
+            $state = match ($stateName) { 'hidden' => 1, 'veryHidden' => 2, default => 0 };
             $stream .= BiffRecordWriter::record(
                 RecordType::BOUNDSHEET,
-                pack('VCC', $sheetOffsets[$index] ?? 0, 0, 0) . BiffString::writeUnicodeString($sheet->name, true)
+                pack('VCC', $sheetOffsets[$index] ?? 0, $state, 0) . BiffString::writeUnicodeString($sheet->name, true)
             );
         }
         $stream .= $sharedStrings->records();
         return $stream . BiffRecordWriter::eof();
     }
 
-    private function fontRecord(string $name, int $points): string
-    {
-        return pack('vvvvvCCCC', $points * 20, 0, 0x7FFF, 400, 0, 0, 0, 0, 0)
-            . BiffString::writeUnicodeString($name, true);
-    }
-
-    private function xfRecord(int $formatId): string
-    {
-        $base = hex2bin('000000000100200000000000000000000000C020');
-        return pack('vv', 0, $formatId) . substr($base, 4);
-    }
 }

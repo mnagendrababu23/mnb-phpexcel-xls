@@ -9,9 +9,10 @@ use Mnb\PHPExcel\Biff\WorkbookInfo;
 use Mnb\PHPExcel\Compound\CompoundFileReader;
 use Mnb\PHPExcel\Support\ErrorCode;
 use Mnb\PHPExcel\Support\MnbExcelException;
+use Mnb\PHPExcel\Snapshot\VisualSnapshotReaderInterface;
 
 /** Fully independent native BIFF8/XLS reader. */
-final class XlsReader implements XlsReaderInterface, MetadataReaderInterface
+final class XlsReader implements XlsReaderInterface, MetadataReaderInterface, VisualSnapshotReaderInterface
 {
     public function format(): string
     {
@@ -22,6 +23,12 @@ final class XlsReader implements XlsReaderInterface, MetadataReaderInterface
     public function metaInfo(string $path, array $options = []): array
     {
         return (new XlsMetadataReader())->metaInfo($path, $options);
+    }
+
+    /** @param array<string,mixed> $options @return array<string,mixed> */
+    public function visualSnapshot(string $path, array $options = []): array
+    {
+        return (new XlsVisualSnapshotReader())->visualSnapshot($path, $options);
     }
 
     /** @return list<list<mixed>> */

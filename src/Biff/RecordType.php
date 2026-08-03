@@ -15,6 +15,7 @@ final class RecordType
     public const CONTINUE = 0x003C;
     public const EXTSST = 0x00FF;
     public const FONT = 0x0031;
+    public const PALETTE = 0x0092;
     public const FORMAT = 0x041E;
     public const XF = 0x00E0;
     public const STYLE = 0x0293;
