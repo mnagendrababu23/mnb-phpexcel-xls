@@ -17,12 +17,10 @@ use Mnb\PHPExcel\Support\Coordinate;
 
 final class WorksheetWriter
 {
-    private const DEFAULT_XF = 0;
-    private const DATE_XF = 1;
-    private const DATETIME_XF = 2;
-
     public function __construct(
         private readonly SharedStringWriter $sharedStrings,
+        private readonly XlsStyleRegistry $styles,
+        private readonly bool $date1904 = false,
         private readonly array $options = [],
     ) {
     }
@@ -43,7 +41,10 @@ final class WorksheetWriter
     {
         $this->validateSheet($sheet);
         $rows = array_values($sheet->rows);
-        $rowCount = min(65536, count($rows));
+        $rowCount = count($rows);
+        if ($rowCount > 65536) {
+            throw UnsupportedXlsFeatureException::forFeature('more than 65536 rows', ['sheet' => $sheet->name, 'rows' => $rowCount]);
+        }
         $columnCount = 0;
         foreach ($rows as $row) {
             $columnCount = max($columnCount, count($row));
@@ -68,7 +69,7 @@ final class WorksheetWriter
                 continue;
             }
             $biffWidth = max(0, min(65535, (int) round((float) $width * 256)));
-            $stream .= BiffRecordWriter::record(RecordType::COLINFO, pack('vvvvvv', $index, $index, $biffWidth, self::DEFAULT_XF, 0, 0));
+            $stream .= BiffRecordWriter::record(RecordType::COLINFO, pack('vvvvvv', $index, $index, $biffWidth, 0, 0, 0));
         }
 
         $stream .= BiffRecordWriter::record(
@@ -91,7 +92,9 @@ final class WorksheetWriter
                 if ($columnIndex >= 256) {
                     break;
                 }
-                $stream .= $this->cellRecord($rowIndex, $columnIndex, $value, $formulaEncoder);
+                $cellRef = Coordinate::columnIndexToName($columnIndex + 1) . ($rowIndex + 1);
+                $xf = $this->styles->styleId($sheet, $rowIndex + 1, $columnIndex + 1, $cellRef, $value);
+                $stream .= $this->cellRecord($rowIndex, $columnIndex, $value, $formulaEncoder, $xf);
             }
         }
 
@@ -121,18 +124,16 @@ final class WorksheetWriter
         return $stream . BiffRecordWriter::eof();
     }
 
-    private function cellRecord(int $row, int $column, mixed $value, FormulaEncoder $formulaEncoder): string
+    private function cellRecord(int $row, int $column, mixed $value, FormulaEncoder $formulaEncoder, int $xf): string
     {
-        $xf = self::DEFAULT_XF;
         if ($value instanceof RichText) {
             $value = implode('', array_map(static fn ($run): string => $run->text, $value->runs));
         }
         if ($value instanceof CellValue) {
-            return $this->typedCellRecord($row, $column, $value, $formulaEncoder);
+            return $this->typedCellRecord($row, $column, $value, $formulaEncoder, $xf);
         }
         if ($value instanceof DateTimeInterface) {
             $serial = $this->dateSerial($value);
-            $xf = $value->format('His') === '000000' ? self::DATE_XF : self::DATETIME_XF;
             return BiffRecordWriter::record(RecordType::NUMBER, pack('vvve', $row, $column, $xf, $serial));
         }
         if ($value === null) {
@@ -151,28 +152,25 @@ final class WorksheetWriter
         return BiffRecordWriter::record(RecordType::LABELSST, pack('vvvV', $row, $column, $xf, $this->sharedStrings->index($text)));
     }
 
-    private function typedCellRecord(int $row, int $column, CellValue $value, FormulaEncoder $formulaEncoder): string
+    private function typedCellRecord(int $row, int $column, CellValue $value, FormulaEncoder $formulaEncoder, int $xf): string
     {
         return match ($value->type()) {
-            CellValue::TYPE_BLANK => BiffRecordWriter::record(RecordType::BLANK, pack('vvv', $row, $column, self::DEFAULT_XF)),
-            CellValue::TYPE_TEXT => BiffRecordWriter::record(RecordType::LABELSST, pack('vvvV', $row, $column, self::DEFAULT_XF, $this->sharedStrings->index((string) $value->value()))),
-            CellValue::TYPE_NUMBER => BiffRecordWriter::record(RecordType::NUMBER, pack('vvve', $row, $column, self::DEFAULT_XF, (float) $value->value())),
-            CellValue::TYPE_BOOLEAN => BiffRecordWriter::record(RecordType::BOOLERR, pack('vvvCC', $row, $column, self::DEFAULT_XF, $value->value() ? 1 : 0, 0)),
-            CellValue::TYPE_ERROR => BiffRecordWriter::record(RecordType::BOOLERR, pack('vvvCC', $row, $column, self::DEFAULT_XF, self::errorCode((string) $value->value()), 1)),
-            CellValue::TYPE_DATE => $this->dateCellRecord($row, $column, $value),
-            CellValue::TYPE_FORMULA => $this->formulaRecord($row, $column, (string) $value->value(), $value->cachedValue(), $formulaEncoder, self::DEFAULT_XF),
+            CellValue::TYPE_BLANK => BiffRecordWriter::record(RecordType::BLANK, pack('vvv', $row, $column, $xf)),
+            CellValue::TYPE_TEXT => BiffRecordWriter::record(RecordType::LABELSST, pack('vvvV', $row, $column, $xf, $this->sharedStrings->index((string) $value->value()))),
+            CellValue::TYPE_NUMBER => BiffRecordWriter::record(RecordType::NUMBER, pack('vvve', $row, $column, $xf, (float) $value->value())),
+            CellValue::TYPE_BOOLEAN => BiffRecordWriter::record(RecordType::BOOLERR, pack('vvvCC', $row, $column, $xf, $value->value() ? 1 : 0, 0)),
+            CellValue::TYPE_ERROR => BiffRecordWriter::record(RecordType::BOOLERR, pack('vvvCC', $row, $column, $xf, self::errorCode((string) $value->value()), 1)),
+            CellValue::TYPE_DATE => $this->dateCellRecord($row, $column, $value, $xf),
+            CellValue::TYPE_FORMULA => $this->formulaRecord($row, $column, (string) $value->value(), $value->cachedValue(), $formulaEncoder, $xf),
             default => throw UnsupportedXlsFeatureException::forFeature('cell value type ' . $value->type()),
         };
     }
 
-    private function dateCellRecord(int $row, int $column, CellValue $value): string
+    private function dateCellRecord(int $row, int $column, CellValue $value, int $xf): string
     {
         $date = $value->value() instanceof DateTimeInterface
             ? $value->value()
             : new DateTimeImmutable((string) $value->value());
-        $format = strtolower((string) ($value->options()['format'] ?? ''));
-        $xf = ($format !== '' && !str_contains($format, 'h') && !str_contains($format, 'i') && !str_contains($format, 's'))
-            || $date->format('His') === '000000' ? self::DATE_XF : self::DATETIME_XF;
         return BiffRecordWriter::record(RecordType::NUMBER, pack('vvve', $row, $column, $xf, $this->dateSerial($date)));
     }
 
@@ -242,9 +240,9 @@ final class WorksheetWriter
     private function dateSerial(DateTimeInterface $date): float
     {
         $utc = DateTimeImmutable::createFromInterface($date);
-        $base = new DateTimeImmutable('1899-12-31 00:00:00', $utc->getTimezone());
+        $base = new DateTimeImmutable($this->date1904 ? '1904-01-01 00:00:00' : '1899-12-31 00:00:00', $utc->getTimezone());
         $days = (int) $base->diff($utc)->format('%r%a');
-        if ($days >= 60) {
+        if (!$this->date1904 && $days >= 60) {
             $days++; // Excel's fake 1900-02-29
         }
         $seconds = ((int) $utc->format('H') * 3600) + ((int) $utc->format('i') * 60) + (int) $utc->format('s');
