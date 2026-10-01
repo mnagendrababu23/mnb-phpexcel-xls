@@ -28,7 +28,7 @@ final class WorksheetWriter
     public function registerStrings(WorksheetData $sheet): void
     {
         foreach ($sheet->rows as $row) {
-            foreach (array_values($row) as $value) {
+            foreach ($row as $value) {
                 $text = $this->stringValue($value);
                 if ($text !== null) {
                     $this->sharedStrings->add($text);
