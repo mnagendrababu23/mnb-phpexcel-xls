@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mnb\PHPExcel\Format;
 
+use Mnb\PHPExcel\Metadata\MetadataFacade;
 use Mnb\PHPExcel\Core\WorkbookData;
 use Mnb\PHPExcel\Core\WorkbookFactory;
 use Mnb\PHPExcel\Reader\Options\ReaderOptions;
@@ -17,6 +18,22 @@ use Mnb\PHPExcel\Snapshot\VisualSnapshot;
 
 final class Xls
 {
+    /** Developer-friendly lazy metadata API. */
+    public static function meta(string $path, array $options = []): MetadataFacade
+    {
+        return new MetadataFacade(
+            $path,
+            static fn(string $file, array $opts): array => self::metaInfo($file, $opts),
+            static function(string $source, string $destination, array $changes, array $opts): void {
+                self::updateMetaInfo($source, $destination, $changes, $opts);
+            },
+            static function(string $source, string $destination, array $opts): void {
+                self::removePersonalInfo($source, $destination, $opts);
+            },
+            $options
+        );
+    }
+
     /** @param array<string,mixed> $options @return array<string,mixed> */
     public static function metaInfo(string $path, array $options = []): array
     {
